@@ -1,9 +1,8 @@
 # setDNS
 > Small CLI utility to chage DNS settings on macOS
 
-One to two paragraph statement about your product and what it does.
-
-![](header.png)
+CLI utility to quickly chage DNS server settings on macOS. The `-d / --default`
+sets the servers to [CloudFlare][cloudflare_article] DNS servers.
 
 ## Installation
 
