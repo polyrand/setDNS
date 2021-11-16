@@ -24,13 +24,6 @@ remove_cmd = ["networksetup", "-setdnsservers", "Wi-Fi", "Empty"]
 check_cmd = ["networksetup", "-getdnsservers", "Wi-Fi"]
 
 
-def e(*args, **kwargs):
-
-    # this should use logging but ¯\_(ツ)_/¯
-    print(*args, **kwargs, file=sys.stderr)
-    raise SystemExit
-
-
 def process_or_error(cmd, err):
     print(cmd)
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -39,8 +32,11 @@ def process_or_error(cmd, err):
         p.check_returncode()
         print(p.stdout.strip())
     except subprocess.CalledProcessError:
-        print(p.stderr)
-        e(err)
+        print(p.stderr, file=sys.stderr)
+        if err:
+            # this should use logging but ¯\_(ツ)_/¯
+            print(err, file=sys.stderr)
+        raise SystemExit
 
 
 if __name__ == "__main__":
@@ -59,9 +55,7 @@ if __name__ == "__main__":
     group.add_argument(
         "-r", "--remove", action="store_true", help="Remove current DNS settings"
     )
-    group.add_argument(
-        "--local", action="store_true", help="Use server in resolv.conf"
-    )
+    group.add_argument("--local", action="store_true", help="Use server in resolv.conf")
 
     args = parser.parse_args()
 
