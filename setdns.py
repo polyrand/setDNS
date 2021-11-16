@@ -2,6 +2,7 @@
 
 import sys
 import subprocess
+from pathlib import Path
 import argparse
 
 
@@ -22,20 +23,25 @@ flush_2_cmd = ["sudo", "killall", "-HUP", "mDNSResponder"]
 default_cmd = ["networksetup", "-setdnsservers", "Wi-Fi"] + servers
 remove_cmd = ["networksetup", "-setdnsservers", "Wi-Fi", "Empty"]
 check_cmd = ["networksetup", "-getdnsservers", "Wi-Fi"]
+scutil_cmd = ["scutil", "--dns"]
+
+
+def e(*args, **kwargs):
+    print(*args, **kwargs, file=sys.stderr)
 
 
 def process_or_error(cmd, err):
-    print(cmd)
+    # print(cmd)
     p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
 
     try:
         p.check_returncode()
-        print(p.stdout.strip())
+        return p.stdout.strip()
     except subprocess.CalledProcessError:
-        print(p.stderr, file=sys.stderr)
+        e(p.stderr)
         if err:
             # this should use logging but ¯\_(ツ)_/¯
-            print(err, file=sys.stderr)
+            e(err)
         raise SystemExit
 
 
@@ -55,21 +61,64 @@ if __name__ == "__main__":
     group.add_argument(
         "-r", "--remove", action="store_true", help="Remove current DNS settings"
     )
-    group.add_argument("--local", action="store_true", help="Use server in resolv.conf")
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Show DNS servers used as reported by scutil",
+    )
+
+    parser.add_argument(
+        "--resolv", action="store_true", help="Show servers in /etc/resolv.conf"
+    )
 
     args = parser.parse_args()
 
     if args.check:
-        process_or_error(check_cmd, "Couldn't check default settings")
+        e("Checking default DNS settings")
+        out = process_or_error(check_cmd, "Couldn't check default settings")
+        print(out)
 
     if args.remove:
-        process_or_error(remove_cmd, "Couldn't remove current DNS servers")
+        e("Removing all DNS servers (empty'ing config)")
+        out = process_or_error(remove_cmd, "Couldn't remove current DNS servers")
+        print(out)
 
     if args.default:
-        process_or_error(default_cmd, "Couldn't set default servers")
+        e("Setting default (cloudflare) dns servers")
+        out = process_or_error(default_cmd, "Couldn't set default servers")
+        print(out)
 
     if args.flush:
-        process_or_error(flush_1_cmd, "Could not flush DNS cache")
-        process_or_error(flush_2_cmd, "Could not flush DNS cache (2)")
+        e("Flushing DNS caches")
+        out = process_or_error(flush_1_cmd, "Could not flush DNS cache")
+        print(out)
+        out = process_or_error(flush_2_cmd, "Could not flush DNS cache (2)")
+        print(out)
+
+    if args.resolv:
+        e("Reading /etc/resolv.conf")
+        data = Path("/etc/resolv.conf").read_text()
+        for line in data.split("\n"):
+            if "nameserver" in line:
+                server_ip = line.strip().split()[1]
+                print(server_ip)
+
+    if args.local:
+        e("Checking local DNS using scutil")
+        scutil_dns_out = process_or_error(scutil_cmd, "Could run scutil --dns")
+
+        main_resolver_group = None
+        for group in scutil_dns_out.split("\n\n"):
+            if "resolver #1" in group:
+                main_resolver_group = group
+
+        if not main_resolver_group:
+            raise ValueError("No resolver group #1 found with scutil --dns")
+
+        for line in main_resolver_group.split("\n"):
+            line = line.strip()
+            if "nameserver" in line:
+                server_addr = line.split(" : ")[-1]
+                print(server_addr)
 
     raise SystemExit
