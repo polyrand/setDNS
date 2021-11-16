@@ -4,67 +4,78 @@ import sys
 import subprocess
 import argparse
 
-ap = argparse.ArgumentParser()
-ap.add_argument("-f", "--flush", action="store_true",
-    help="Flush DNS cache")
-ap.add_argument("-d", "--default", action="store_true",
-    help="Set DNS servers to 1.1.1.1 and/or 1.0.0.1")
-ap.add_argument("-rm", "--remove", action="store_true",
-    help="Remove current DNS settings")
-ap.add_argument("-c", "--check", action="store_true",
-    help="Check current settings")
-args = vars(ap.parse_args())
 
-servers = ["1.1.1.1", "1.0.0.1"] # cloudflare DNS servers
+servers = [
+    "1.1.1.1",
+    "1.0.0.1",
+    "1.1.1.2",
+    "1.0.0.2",
+    "2606:4700:4700::1111",
+    "2606:4700:4700::1001",
+    "2606:4700:4700::1112",
+    "2606:4700:4700::1002",
+]  # cloudflare DNS servers
 
-flush_1 = r"sudo dscacheutil -flushcache"
-flush_2 = r"sudo killall -HUP mDNSResponder"
 
-default = f"networksetup -setdnsservers Wi-Fi {servers[0]} {servers[1]}"
+flush_1_cmd = ["sudo", "dscacheutil", "-flushcache"]
+flush_2_cmd = ["sudo", "killall", "-HUP", "mDNSResponder"]
+default_cmd = ["networksetup", "-setdnsservers", "Wi-Fi"] + servers
+remove_cmd = ["networksetup", "-setdnsservers", "Wi-Fi", "Empty"]
+check_cmd = ["networksetup", "-getdnsservers", "Wi-Fi"]
 
-remove = r'networksetup -setdnsservers Wi-Fi "Empty"'
 
-check = r"networksetup -getdnsservers Wi-Fi"
+def e(*args, **kwargs):
 
-if args['remove'] is not False:
+    # this should use logging but ¯\_(ツ)_/¯
+    print(*args, **kwargs, file=sys.stderr)
+    raise SystemExit
+
+
+def process_or_error(cmd, err):
+    print(cmd)
+    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
     try:
-        subprocess.run(remove, shell=True, check=True)
-    except:
-        print("Error occurred, couldn't remove current DNS servers")
-    if args['flush'] is not False:
-        try:
-            subprocess.run(flush_1, shell=True, check=True)
-        except subprocess.CalledProcessError:
-            print("Could not flush DNS cache")
-            sys.exit(1)
-        try:
-            subprocess.run(flush_2, shell=True, check=True)
-        except:
-            print("Couldn't flush")
-            sys.exit(1)
-
-
-if args['flush'] is not False:
-    try:
-        subprocess.run(flush_1, shell=True, check=True)
+        p.check_returncode()
+        print(p.stdout.strip())
     except subprocess.CalledProcessError:
-        print("Could not flush DNS cache")
-        sys.exit(1)
-    try:
-        subprocess.run(flush_2, shell=True, check=True)
-    except:
-        print("Couldn't flush")
-        sys.exit(1)
-if args['default'] is not False:
-    try:
-        subprocess.run(default, shell=True, check=True)
-    except:
-        print("Couldn't set default servers")
-        sys.exit(1)
+        print(p.stderr)
+        e(err)
 
-if args['check'] is not False:
-    try:
-        subprocess.run(check, shell=True, check=True)
-    except:
-        print("Couldn't check default settinfs")
-        sys.exit(1)
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-f", "--flush", action="store_true", help="Flush DNS cache")
+    parser.add_argument(
+        "-c", "--check", action="store_true", help="Check current settings"
+    )
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        "-d",
+        "--default",
+        action="store_true",
+        help="Set DNS servers to 1.1.1.1 and/or 1.0.0.1",
+    )
+    group.add_argument(
+        "-r", "--remove", action="store_true", help="Remove current DNS settings"
+    )
+    group.add_argument(
+        "--local", action="store_true", help="Use server in resolv.conf"
+    )
+
+    args = parser.parse_args()
+
+    if args.check:
+        process_or_error(check_cmd, "Couldn't check default settings")
+
+    if args.remove:
+        process_or_error(remove_cmd, "Couldn't remove current DNS servers")
+
+    if args.default:
+        process_or_error(default_cmd, "Couldn't set default servers")
+
+    if args.flush:
+        process_or_error(flush_1_cmd, "Could not flush DNS cache")
+        process_or_error(flush_2_cmd, "Could not flush DNS cache (2)")
+
+    raise SystemExit
